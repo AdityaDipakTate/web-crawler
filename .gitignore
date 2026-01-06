@@ -1,0 +1,6 @@
+# testing files
+test.py
+requirements.txt
+chinook.db
+crawler.db
+crawl_data.db   __pycache__/
