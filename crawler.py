@@ -7,7 +7,9 @@ from robots_handler import load_robot_parser, extract_sitemap_urls
 import time
 visited = set()
 all_links = set()
-from database import init_db, save_page
+from database import init_db, upsert_page, insert_link
+
+
 
 
 init_db()
@@ -49,6 +51,8 @@ def crawl_it(start_url, max_depth):
     sitemap_urls = extract_sitemap_urls(domain)
 
     queue = []
+    if not sitemap_urls:
+        print("No usable sitemap URLs found, falling back to seed URL")
 
     # Start from sitemap URLs if present
     seed_urls = sitemap_urls or [start_url]
@@ -74,7 +78,7 @@ def crawl_it(start_url, max_depth):
 
         # Fetch
         try:
-            time.sleep(1)  # Be polite
+            time.sleep(1)  # Be polite to servers
             resp = requests.get(url, timeout=6)
             if resp.status_code != 200:
                 continue
@@ -91,19 +95,41 @@ def crawl_it(start_url, max_depth):
         soup = BeautifulSoup(resp.text, 'html.parser')
         title, desc, content = extract_data(soup, url)
         # print(f"title: {title}\ndesc: {desc}\ncontent preview: {content[:150]}\n")
-# storing in DB
 
-        save_page(
+        import hashlib
+
+        content_hash = hashlib.sha256(
+        content.encode("utf-8", errors="ignore")
+        ).hexdigest()
+
+        content_length = len(content)
+
+# storing in DB
+        page_id = upsert_page(
         url=url,
         domain=main_domain,
         title=title,
         desc=desc,
         content=content,
-        links=all_links,
+        content_hash=content_hash,
+        content_length=content_length,
         depth=depth,
         status_code=resp.status_code,
-        content_type=resp.headers.get("Content-Type")
-        )
+        content_type=resp.headers.get("Content-Type", "")
+        )   
+
+
+        # save_page(
+        # url=url,
+        # domain=main_domain,
+        # title=title,
+        # desc=desc,
+        # content=content,
+        # links=all_links,
+        # depth=depth,
+        # status_code=resp.status_code,
+        # content_type=resp.headers.get("Content-Type")
+        # )
 
         # Extract internal links
         for link in soup.find_all("a", href=True):
@@ -116,13 +142,33 @@ def crawl_it(start_url, max_depth):
             if any(next_url.lower().endswith(ext) for ext in ['.pdf', '.jpg', '.png', '.doc', '.zip', '.mp4', '.css', '.js']):
                 continue
 
+    # -------- STEP 5.3 START --------
+
+            child_page_id = upsert_page(
+            url=next_url,
+            domain=main_domain,
+            title=None,
+            desc=None,
+            content="",
+            content_hash=None,
+            content_length=0,
+            depth=depth + 1,
+            status_code=None,
+            content_type=None
+            )
+
+            insert_link(page_id, child_page_id)
+
+    # -------- STEP 5.3 END --------
+
             all_links.add(next_url)
 
             s = score_url(next_url, depth + 1)
             heapq.heappush(queue, (-s, next_url, depth + 1))
 
-start_url = "https://www.python.org/"
+# start_url = "https://leetcode.com/"
 # start_url = "https://example.com/"
+start_url = "https://www.python.org/"
 crawl_it(start_url, 0)
 
 print("\n----- Summary -----")
