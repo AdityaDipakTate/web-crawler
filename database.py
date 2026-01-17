@@ -9,29 +9,6 @@ def get_connection():
     return sqlite3.connect(DB_PATH)
 
 # Initialize DB
-# def init_db():
-#     conn = get_connection()
-#     cur = conn.cursor()
-
-#     cur.execute("""
-#     CREATE TABLE IF NOT EXISTS pages (
-#         id INTEGER PRIMARY KEY AUTOINCREMENT,
-#         url TEXT UNIQUE,
-#         domain TEXT,
-#         title TEXT,
-#         description TEXT,
-#         content TEXT,
-#         links TEXT,
-#         depth INTEGER,
-#         status_code INTEGER,
-#         content_type TEXT,
-#         crawled_at TEXT
-#     )
-#     """)
-
-#     conn.commit()
-#     conn.close()
-
 def init_db():
     conn = get_connection()
     cur = conn.cursor()
@@ -39,24 +16,26 @@ def init_db():
     # pages table (upgraded, minimal)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS pages (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        url TEXT UNIQUE,
-        domain TEXT,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    url TEXT UNIQUE,
+    domain TEXT,
 
-        title TEXT,
-        description TEXT,
-        content TEXT,
+    title TEXT,
+    description TEXT,
+    content TEXT,
 
-        content_hash TEXT,
-        content_length INTEGER,
+    content_hash TEXT,
+    content_length INTEGER,
 
-        depth INTEGER,
-        status_code INTEGER,
+    depth INTEGER,
+    status_code INTEGER,
+    content_type TEXT,
 
-        last_crawled TEXT,
-        crawl_count INTEGER DEFAULT 1
+    crawled_at TEXT,
+    crawl_count INTEGER DEFAULT 1
     )
     """)
+
 
     # links table (NEW)
     cur.execute("""
@@ -71,42 +50,30 @@ def init_db():
     )
     """)
 
+        # terms table (for inverted index)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS terms (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        term TEXT UNIQUE
+    )
+    """)
+
+    # postings table (term → page mapping)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS postings (
+        term_id INTEGER,
+        page_id INTEGER,
+        frequency INTEGER,
+
+        PRIMARY KEY (term_id, page_id),
+
+        FOREIGN KEY(term_id) REFERENCES terms(id),
+        FOREIGN KEY(page_id) REFERENCES pages(id)
+    )
+    """)
+
     conn.commit()
     conn.close()
-
-# Insert Page
-# def save_page(url, domain, title, desc, content,
-#               links, depth, status_code, content_type):
-
-#     conn = get_connection()
-#     cur = conn.cursor()
-
-#     try:
-#         cur.execute("""
-#         INSERT OR IGNORE INTO pages
-#         (url, domain, title, description, content,
-#          links, depth, status_code, content_type, crawled_at)
-#         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-#         """, (
-#             url,
-#             domain,
-#             title,
-#             desc,
-#             content,
-#             json.dumps(list(links)),
-#             depth,
-#             status_code,
-#             content_type,
-#             datetime.utcnow().isoformat()
-#         ))
-
-#         conn.commit()
-
-#     except Exception as e:
-#         print("DB insert error:", e)
-
-#     finally:
-#         conn.close()
 
 # insert replace with upsert
 def upsert_page(
@@ -122,6 +89,7 @@ def upsert_page(
         "SELECT id, content_hash FROM pages WHERE url = ?",
         (url,)
     )
+    content_changed = False
     row = cur.fetchone()
 
     now = datetime.utcnow().isoformat()
@@ -142,11 +110,16 @@ def upsert_page(
             now
         ))
         page_id = cur.lastrowid
+        content_changed = content_hash is not None
 
     else:
         page_id, old_hash = row
 
-        if old_hash == content_hash:
+        if content_hash is None:
+        # placeholder upsert → preserve existing data
+            pass
+
+        elif old_hash == content_hash:
             # Content unchanged → metadata update only
             cur.execute("""
             UPDATE pages
@@ -177,10 +150,19 @@ def upsert_page(
                 status_code, content_type,
                 now, page_id
             ))
+            content_changed = True
 
     conn.commit()
     conn.close()
-    return page_id
+
+    # testing 
+    print(
+    f"[DB] url={url} | "
+    f"hash={'None' if content_hash is None else 'REAL'} | "
+    f"content_changed={content_changed}"
+    )
+
+    return page_id, content_changed
 
 # Utility
 def page_exists(url):

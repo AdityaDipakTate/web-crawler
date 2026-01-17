@@ -1,47 +1,16 @@
-import heapq
+import heapq, time, hashlib, requests
 from urllib.parse import urlparse, urljoin
-import requests
 from bs4 import BeautifulSoup
+from helper_functions import normalize_url,score_url
 from extractor import extract_data
 from robots_handler import load_robot_parser, extract_sitemap_urls
-import time
+from database import init_db, upsert_page, insert_link
+from indexer import index_page
+
 visited = set()
 all_links = set()
-from database import init_db, upsert_page, insert_link
-
-
-
 
 init_db()
-
-def normalize_url(url):
-    """Clean URL: remove trailing slash, keep root '/' """
-    parsed = urlparse(url)
-
-    scheme = parsed.scheme.lower() or "http"
-    netloc = parsed.netloc.lower()
-    path = parsed.path.rstrip("/") or "/"
-    return f"{scheme}://{netloc}{path}"
-
-def score_url(url, depth):
-    """Higher score = more important. Priority queue uses negative score."""
-    score = 0
-
-    # 1. Depth priority (shallower = better)
-    score += max(0, 6 - depth)
-
-    # 2. Important sections 
-    important = ["about", "docs", "blog", "download", "help", "tutorial"]
-    if any(k in url.lower() for k in important):
-        score += 3
-
-    # 3. Bad/useless URLs
-    ignore = ["login", "signup", "logout", "wp-", "admin", "cart", "checkout"]
-    if any(k in url.lower() for k in ignore):
-        score -= 8
-
-    return score
-
 
 def crawl_it(start_url, max_depth):
     main_domain = urlparse(start_url).netloc
@@ -96,8 +65,7 @@ def crawl_it(start_url, max_depth):
         title, desc, content = extract_data(soup, url)
         # print(f"title: {title}\ndesc: {desc}\ncontent preview: {content[:150]}\n")
 
-        import hashlib
-
+        # Prepare data for DB(prepare hash for the content extracted)
         content_hash = hashlib.sha256(
         content.encode("utf-8", errors="ignore")
         ).hexdigest()
@@ -105,7 +73,7 @@ def crawl_it(start_url, max_depth):
         content_length = len(content)
 
 # storing in DB
-        page_id = upsert_page(
+        page_id, content_changed = upsert_page(
         url=url,
         domain=main_domain,
         title=title,
@@ -118,18 +86,14 @@ def crawl_it(start_url, max_depth):
         content_type=resp.headers.get("Content-Type", "")
         )   
 
-
-        # save_page(
-        # url=url,
-        # domain=main_domain,
-        # title=title,
-        # desc=desc,
-        # content=content,
-        # links=all_links,
-        # depth=depth,
-        # status_code=resp.status_code,
-        # content_type=resp.headers.get("Content-Type")
-        # )
+        if content_changed:
+            try:
+                # testing 
+                print(f"[INDEX] indexing page_id={page_id} url={url}")
+  
+                index_page(page_id, title, desc, content)
+            except Exception as e:
+                print(f"Indexing failed for {url}: {e}")
 
         # Extract internal links
         for link in soup.find_all("a", href=True):
@@ -141,10 +105,10 @@ def crawl_it(start_url, max_depth):
 
             if any(next_url.lower().endswith(ext) for ext in ['.pdf', '.jpg', '.png', '.doc', '.zip', '.mp4', '.css', '.js']):
                 continue
+            
+            # url is crawlable so store in DB
 
-    # -------- STEP 5.3 START --------
-
-            child_page_id = upsert_page(
+            child_page_id, _ = upsert_page(
             url=next_url,
             domain=main_domain,
             title=None,
@@ -159,17 +123,17 @@ def crawl_it(start_url, max_depth):
 
             insert_link(page_id, child_page_id)
 
-    # -------- STEP 5.3 END --------
 
             all_links.add(next_url)
 
             s = score_url(next_url, depth + 1)
             heapq.heappush(queue, (-s, next_url, depth + 1))
 
-# start_url = "https://leetcode.com/"
+start_url = "https://www.unipune.ac.in/"
 # start_url = "https://example.com/"
-start_url = "https://www.python.org/"
-crawl_it(start_url, 0)
+# start_url = "https://www.python.org/"
+# start_url = "https://flask.palletsprojects.com/"
+crawl_it(start_url, 1)
 
 print("\n----- Summary -----")
 print(f"Total pages visited: {len(visited)}")

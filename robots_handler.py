@@ -34,13 +34,14 @@ def extract_sitemap_urls(domain):
                     sitemap_link = line.split(":", 1)[1].strip()
                     sitemap_urls.update(parse_sitemap(sitemap_link))
     except Exception as e:
-        print(f" Failed to fetch sitemap from robots.txt: {e}")
+        print(" ")
     return sitemap_urls
 
 
 def parse_sitemap(sitemap_url):
     """
     Parse a given sitemap.xml and return all URLs inside it.
+        # print(f" Failed to fetch sitemap from robots.txt: {e}")
     """
     urls = set()
     try:
