@@ -71,6 +71,9 @@ Crawler → Extractor → Inverted Index → Search Engine
 git clone https://github.com/AdityaDipakTate/web-crawler.git
 cd web-crawler
 pip install requests beautifulsoup4
+```
+-Provide a seed (starting) URL in crawler.py then,
+```bash 
 python3 crawler.py
 ```
 
