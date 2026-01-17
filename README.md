@@ -1,4 +1,4 @@
-# 🌐 Web Crawler and Mini Search Engine
+# 🌐 Web Crawler 
 
 ## 📌 Project Overview
 This project is an academic implementation of a **domain-specific web crawler integrated with an inverted indexing and search mechanism**, developed as part of the **MSc Computer Science final semester project** at **PUCSD, Savitribai Phule Pune University**.
@@ -63,19 +63,6 @@ Crawler → Extractor → Inverted Index → Search Engine
 
 ---
 
-## 📂 Project Structure
-```
-web-crawler/
-├── crawler.py
-├── extractor.py
-├── robots_handler.py
-├── customFunctions.py
-├── parsing.txt
-├── fundamentals.txt
-├── project_overlook.txt
-├── nextSteps.txt
-└── README.md
-```
 
 ---
 
